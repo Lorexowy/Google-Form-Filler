@@ -6,8 +6,17 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import time
 import random
+import webbrowser
+import logging
 
-def fill_form(driver, form_url):
+# Konfiguracja logowania do pliku
+def setup_logging(enable_logging):
+    if enable_logging:
+        logging.basicConfig(filename='form_filler.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+    else:
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+
+def fill_form(driver, form_url, text_inputs):
     driver.get(form_url)
     time.sleep(5)  # Czekaj
 
@@ -15,12 +24,14 @@ def fill_form(driver, form_url):
 
     while True:
         try:
-            # Tekst
-            text_inputs = driver.find_elements(By.XPATH, '//input[@type="text"]')
-            for input_box in text_inputs:
-                if not filled_first_text_input:
-                    input_box.send_keys("Polska")
-                    filled_first_text_input = True
+            if not filled_first_text_input:
+                # Tekst - tylko pierwsze pole
+                text_input_element = driver.find_element(By.XPATH, '//input[@type="text"]')
+                if text_inputs:
+                    input_text = random.choice(text_inputs)
+                    text_input_element.send_keys(input_text)
+                    logging.info(f"Entered text: {input_text}")
+                filled_first_text_input = True
                 time.sleep(0.1)  # Opóźnienie
 
             # Radiobuttons
@@ -41,7 +52,7 @@ def fill_form(driver, form_url):
                     if label and random.choice([True, False]):  # Losowy
                         checkbox.click()
                         time.sleep(0.1)  # Opóźnienie
-                        print(f"Clicked checkbox: {label}")
+                        logging.info(f"Clicked checkbox: {label}")
 
             # Skala
             scale_questions = driver.find_elements(By.XPATH, '//div[@role="radiogroup"]//div[@data-value]')
@@ -50,7 +61,18 @@ def fill_form(driver, form_url):
                 if options:
                     random.choice(options).click()
                     time.sleep(0.1)  # Opóźnienie
-                    print(f"Clicked scale option: {options[random.randint(0, len(options) - 1)].get_attribute('aria-label')}")
+                    logging.info(f"Clicked scale option: {options[random.randint(0, len(options) - 1)].get_attribute('aria-label')}")
+
+            # Rozwijana lista
+            dropdowns = driver.find_elements(By.XPATH, '//div[@role="listbox"]')
+            for dropdown in dropdowns:
+                dropdown.click()
+                time.sleep(0.1)  # Opóźnienie
+                options = dropdown.find_elements(By.XPATH, './/div[@role="option"]')
+                if options:
+                    random.choice(options).click()
+                    time.sleep(0.1)  # Opóźnienie
+                    logging.info(f"Selected dropdown option: {options[random.randint(0, len(options) - 1)].text}")
 
             # Dalej
             next_button = driver.find_elements(By.XPATH, '//span[contains(text(), "Dalej") or contains(text(), "Next")]')
@@ -61,7 +83,7 @@ def fill_form(driver, form_url):
                 break  # Koniec
 
         except Exception as e:
-            print(f"An error occurred: {e}")
+            logging.error(f"An error occurred: {e}")
             break
 
     try:
@@ -70,14 +92,15 @@ def fill_form(driver, form_url):
         submit_button.click()
         time.sleep(0.5)  # Czekaj
     except Exception as e:
-        print(f"An error occurred while submitting the form: {e}")
+        logging.error(f"An error occurred while submitting the form: {e}")
 
-def main(form_url, repetitions):
+def main(form_url, repetitions, text_inputs, enable_logging):
+    setup_logging(enable_logging)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service)
     try:
         for _ in range(repetitions):  # Powtórzenia
-            fill_form(driver, form_url)
+            fill_form(driver, form_url, text_inputs)
             time.sleep(0.5)  # Czekaj
     finally:
         driver.quit()
@@ -88,18 +111,74 @@ def main(form_url, repetitions):
     messagebox.showinfo("Completion", f"Surveys have been filled {repetitions} times. Thank you! :-)")
 
 def start_gui():
-    root = tk.Tk()
-    root.withdraw()  # Ukryj główne okno
+    def on_submit(url_entry, repetitions_entry, text_inputs_entry, log_var):
+        form_url = url_entry.get()
+        try:
+            repetitions = int(repetitions_entry.get())
+            if repetitions < 1 or repetitions > 100:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid number of repetitions (1-100).")
+            return
 
-    form_url = simpledialog.askstring("Input", "Please enter the Google Form URL:", parent=root)
-    repetitions = simpledialog.askinteger("Input", "Please enter the number of repetitions:\n\n1-100", parent=root, minvalue=1, maxvalue=100)
+        text_inputs = text_inputs_entry.get().split(',')
+        text_inputs = [text.strip() for text in text_inputs]
 
-    if form_url and repetitions:
+        enable_logging = log_var.get()
+
         disclaimer_text = ("Disclaimer: I understand that using this program does not provide real scientific results. "
                            "Using this program for scientific surveys is not recommended. For "
                            "educational purposes only.\n\nCreated and coded by www.mateuszmichel.com")
         messagebox.showinfo("Disclaimer", disclaimer_text)
-        main(form_url, repetitions)
+        main(form_url, repetitions, text_inputs, enable_logging)
+
+    def open_url(event):
+        webbrowser.open_new("https://mateuszmichel.com/")
+
+    def on_closing():
+        if messagebox.askokcancel("Quit", "Do you want to quit?"):
+            root.destroy()
+
+    root = tk.Tk()
+    root.title("Google Random Form Filler")
+    root.configure(bg='#ADD8E6')  # Niebieskie tło
+
+    # Tytuł
+    title_label = tk.Label(root, text="Google Random Form Filler", font=("Helvetica", 16), bg='#ADD8E6')
+    title_label.grid(row=0, column=0, columnspan=2, pady=10)
+
+    # Etykieta i pole do wprowadzania URL
+    tk.Label(root, text="Google Form URL:", bg='#ADD8E6').grid(row=1, column=0, padx=10, pady=10, sticky='e')
+    url_entry = tk.Entry(root, width=50)
+    url_entry.grid(row=1, column=1, padx=10, pady=10)
+
+    # Etykieta i pole do wprowadzania liczby powtórzeń
+    tk.Label(root, text="Number of repetitions:", bg='#ADD8E6').grid(row=2, column=0, padx=10, pady=10, sticky='e')
+    repetitions_entry = tk.Entry(root, width=10)
+    repetitions_entry.grid(row=2, column=1, padx=10, pady=10, sticky='w')
+
+    # Etykieta i pole do wprowadzania tekstu do pól tekstowych z przykładem
+    tk.Label(root, text="Text inputs (comma separated):", bg='#ADD8E6').grid(row=3, column=0, padx=10, pady=10, sticky='e')
+    text_inputs_entry = tk.Entry(root, width=50)
+    text_inputs_entry.grid(row=3, column=1, padx=10, pady=10)
+    tk.Label(root, text="Example: Poland, Ireland, Germany", bg='#ADD8E6').grid(row=4, column=1, padx=10, pady=10, sticky='w')
+
+    # Opcja zapisywania logów
+    log_var = tk.IntVar()
+    log_check = tk.Checkbutton(root, text="Enable logging", variable=log_var, bg='#ADD8E6')
+    log_check.grid(row=5, column=0, columnspan=2)
+
+    # Przycisk Submit
+    submit_button = tk.Button(root, text="Submit", command=lambda: on_submit(url_entry, repetitions_entry, text_inputs_entry, log_var), bg='#87CEEB')
+    submit_button.grid(row=6, column=0, columnspan=2, pady=20)
+
+    # Napis na dole
+    footer = tk.Label(root, text="created and coded by www.mateuszmichel.com", fg="blue", cursor="hand2", bg='#ADD8E6')
+    footer.grid(row=7, column=0, columnspan=2, pady=10)
+    footer.bind("<Button-1>", open_url)
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
+    root.mainloop()
 
 if __name__ == "__main__":
     start_gui()
